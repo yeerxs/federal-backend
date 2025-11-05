@@ -1,0 +1,1 @@
+# Arquivo __init__.py para tornar config um módulo Python
