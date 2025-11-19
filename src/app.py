@@ -31,7 +31,9 @@ def create_app():
         "http://localhost:3002",  # Porta alternativa do frontend
         "http://127.0.0.1:3002",
         "http://localhost:5173",  # Vite dev server alternativo
-        "http://127.0.0.1:5173"
+        "http://127.0.0.1:5173",
+        "http://localhost:5175",  # Vite dev server porta atual
+        "http://127.0.0.1:5175"
     ], supports_credentials=True, methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allow_headers=['Content-Type', 'Authorization'])
     
     # Inicializar JWT
@@ -44,6 +46,7 @@ def create_app():
     # from routes.contracts import contracts_bp  # Temporariamente comentado
     from routes.client import client_bp
     from routes.activation import activation_bp
+    from routes.upload import upload_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(user_bp, url_prefix='/api/user')
@@ -51,6 +54,7 @@ def create_app():
     # app.register_blueprint(contracts_bp, url_prefix='/api')  # Temporariamente comentado
     app.register_blueprint(client_bp, url_prefix='/api/client')
     app.register_blueprint(activation_bp, url_prefix='/api/activations')
+    app.register_blueprint(upload_bp, url_prefix='/api')
     
     # Criar diretório de uploads se não existir
     upload_dir = os.path.join(os.path.dirname(__file__), 'uploads')

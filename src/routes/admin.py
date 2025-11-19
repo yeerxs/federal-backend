@@ -8,6 +8,7 @@ import qrcode
 from io import BytesIO
 
 from models.user import db, User, Activation, Document, DDD, ActivationHistory, AdminLog, Notification
+from models.ddd_import import DDDImport
 # from models.signature import Contract  # Temporariamente comentado
 from models.user import ContractAcceptance
 from utils.pdf_generator import create_combined_pdf
@@ -16,9 +17,6 @@ from sqlalchemy.orm import joinedload
 admin_bp = Blueprint("admin", __name__)
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "pdf"}
-
-def allowed_file(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -1269,6 +1267,74 @@ def delete_ddd(ddd_id):
         
         return jsonify({"message": "DDD excluído com sucesso"}), 200
         
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Erro interno: {str(e)}"}), 500
+
+@admin_bp.route("/ddds/sync", methods=["POST"])
+@jwt_required()
+def sync_ddds():
+    try:
+        auth_check = require_admin()
+        if auth_check:
+            return auth_check
+
+        user_id = get_jwt_identity()
+        operator_filter = request.json.get("operator") if request.is_json else None
+
+        def norm_op(op):
+            s = (op or "").strip().lower()
+            if s.startswith("vivo"): return "vivo"
+            if s.startswith("claro"): return "claro"
+            if s.startswith("tim"): return "tim"
+            return None
+
+        imports = DDDImport.query.all()
+        target = set()
+        for imp in imports:
+            op = norm_op(imp.operadora)
+            if not op:
+                continue
+            ddd_value = (imp.ddd or "").strip()[:2]
+            if len(ddd_value) != 2 or not ddd_value.isdigit():
+                continue
+            if operator_filter and op != operator_filter:
+                continue
+            target.add((op, ddd_value))
+
+        existing = {(d.operator, d.ddd): d for d in DDD.query.all()}
+
+        to_remove = []
+        to_add = []
+
+        for (op, ddd_value), obj in existing.items():
+            if operator_filter and op != operator_filter:
+                continue
+            if (op, ddd_value) not in target:
+                to_remove.append(obj)
+
+        for op, ddd_value in target:
+            if (op, ddd_value) not in existing:
+                to_add.append((op, ddd_value))
+
+        user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+
+        for obj in to_remove:
+            db.session.delete(obj)
+
+        for op, ddd_value in to_add:
+            db.session.add(DDD(operator=op, ddd=ddd_value, is_active=True, created_by=user_uuid))
+
+        db.session.commit()
+
+        log_admin_action(user_id, "DDD_SYNC", "ddd", None, f"sync: add={len(to_add)} remove={len(to_remove)} filter={operator_filter}")
+
+        return jsonify({
+            "added": len(to_add),
+            "removed": len(to_remove),
+            "total": DDD.query.count(),
+            "operator": operator_filter or "all"
+        }), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Erro interno: {str(e)}"}), 500
