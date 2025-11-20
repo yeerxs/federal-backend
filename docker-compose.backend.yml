@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: federal_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-federal}
+      POSTGRES_USER: ${POSTGRES_USER:-federal_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-federal_pass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - appnet
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./federal-backend
+      dockerfile: Dockerfile
+    container_name: federal_backend
+    restart: unless-stopped
+    environment:
+      USE_SQLITE: "false"
+      DATABASE_URL: "postgresql+psycopg2://${POSTGRES_USER:-federal_user}:${POSTGRES_PASSWORD:-federal_pass}@db:5432/${POSTGRES_DB:-federal}"
+      SECRET_KEY: ${SECRET_KEY:-change-me}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me}
+      UPLOAD_FOLDER: "src/uploads"
+      MAX_CONTENT_LENGTH: "16777216"
+    volumes:
+      - backend_uploads:/app/src/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - appnet
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  pgdata:
+  backend_uploads:
